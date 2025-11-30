@@ -7,6 +7,7 @@ from typing import List, Optional
 import os
 from bson import ObjectId
 from datetime import timedelta
+from recommendation import get_recommendations, get_section_recommendations
 
 app = FastAPI(title = "Chanceux Intel Backend")
 
@@ -21,7 +22,8 @@ app.add_middleware(
 
 
 # MongoDB Configuration
-MONGODB_URL = os.getenv("MONGODB_URL", )
+MONGODB_URL = os.getenv("MONGODB_URL")
+print(f"🔗 Connected to MongoDB: {MONGODB_URL[:50] if MONGODB_URL else 'NOT CONFIGURED'}...")
 client = AsyncIOMotorClient(MONGODB_URL)
 db = client.fashion_intel
 
@@ -144,6 +146,107 @@ async def debug_stats():
             for e in recent
         ]
     }
+
+
+@app.post("/recommendations/items")
+async def recommend_items(section: str, items_touched: List[str], store_id: str = "demo-store-001"):
+    """Get product recommendations based on browsing behavior"""
+    return await get_recommendations(store_id, section, items_touched)
+
+
+@app.get("/recommendations/sections/{section}")
+async def recommend_sections(section: str, store_id: str = "demo-store-001"):
+    """Get section recommendations"""
+    return await get_section_recommendations(store_id, section)
+
+
+@app.get("/insights/{store_id}/actionable")
+async def get_actionable_insights(store_id: str):
+    """Generate actionable insights for store owners"""
+    
+    # Get top sections
+    pipeline = [
+        {"$match": {"store_id": store_id}},
+        {"$group": {
+            "_id": "$section",
+            "visits": {"$sum": 1},
+            "avg_time": {"$avg": "$time_spent_seconds"},
+            "avg_items": {"$avg": {"$size": "$items_touched"}}
+        }},
+        {"$sort": {"visits": -1}}
+    ]
+    sections = await db.events.aggregate(pipeline).to_list(100)
+    
+    insights = []
+    
+    # Insight 1: High traffic, low engagement
+    for section in sections:
+        if section["visits"] > 10 and section["avg_time"] < 120:
+            insights.append({
+                "type": "warning",
+                "title": f"Low engagement in {section['_id']}",
+                "description": f"High traffic ({section['visits']} visits) but customers spend only {int(section['avg_time'])}s. Consider better product placement or signage.",
+                "action": "Reorganize display or add promotional signage"
+            })
+    
+    # Insight 2: High engagement, low traffic
+    for section in sections:
+        if section["visits"] < 10 and section["avg_time"] > 180:
+            insights.append({
+                "type": "opportunity",
+                "title": f"Hidden gem: {section['_id']}",
+                "description": f"Customers who find this section spend {int(section['avg_time'])}s browsing. Drive more traffic here.",
+                "action": "Add wayfinding signage or move closer to entrance"
+            })
+    
+    # Insight 3: High touch rate
+    for section in sections:
+        if section["avg_items"] > 3:
+            insights.append({
+                "type": "success",
+                "title": f"Strong interest in {section['_id']}",
+                "description": f"Customers touch an average of {section['avg_items']:.1f} items. This section is performing well.",
+                "action": "Consider expanding inventory or similar styles"
+            })
+    
+    return {
+        "insights": insights[:5],  # Top 5 insights
+        "generated_at": datetime.utcnow().isoformat()
+    }
+
+@app.get("/debug/connection")
+async def debug_connection():
+    try:
+        await client.admin.command('ping')
+
+        total = await db.events.count_documents({})
+        test_doc = {
+            "test": True,
+            "timestamp": datetime.utcnow(),
+            "message": "Connection test"
+        }
+
+        result = await db.debug_tests.insert_one(test_doc)
+
+        await db.events.delete_one({"_id": result.inserted_id})
+
+        return {
+            "status": "✅ Connected",
+            "database": "chanceux_intel",
+            "collection": "events",
+            "total_events": total,
+            "can_write": True,
+            "mongodb_url_configured": bool(MONGODB_URL)
+        }
+    
+    except Exception as e:
+        return {
+            "status": "❌ Connection failed",
+            "error": str(e),
+            "mongodb_url_configured": bool(MONGODB_URL)
+        }
+
+        
 
 
 if __name__ == "__main__":

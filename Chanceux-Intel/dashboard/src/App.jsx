@@ -9,7 +9,33 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [recommendations, setRecommendations] = useState([]);
+  const [actionableInsights, setActionableInsights] = useState([]);
   const storeId = 'demo-store-001';
+
+
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      if (sectionData.length > 0) {
+        const topSection = sectionData[0].name.toLowerCase();
+        const res = await fetch(`http://localhost:8000/recommendations/sections/${topSection}`);
+        const data = await res.json();
+        setRecommendations(data.they_also_visit || []);
+      }
+    };
+
+    if (insights) fetchRecommendations();
+  }, [insights]);
+
+  useEffect(() => {
+    const fetchActionable = async () => {
+      const res = await fetch(`http://localhost:8000/insights/${storeId}/actionable`);
+      const data = await res.json();
+      setActionableInsights(data.insights || []);
+    };
+
+    if (insights) fetchActionable();
+  }, [insights]);
 
   const fetchData = async () => {
     try {
@@ -84,7 +110,7 @@ export default function Dashboard() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
           <p className="text-red-800 font-medium">{error}</p>
-          <button 
+          <button
             onClick={fetchData}
             className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
@@ -97,12 +123,15 @@ export default function Dashboard() {
 
   const sectionData = getSectionData();
   const genderData = getGenderDistribution();
-  const avgTimeSpent = sessions.length > 0 
+  const avgTimeSpent = sessions.length > 0
     ? Math.round(sessions.reduce((sum, s) => sum + s.time_spent_seconds, 0) / sessions.length)
     : 0;
   const avgItemsTouched = sessions.length > 0
     ? Math.round(sessions.reduce((sum, s) => sum + s.items_touched.length, 0) / sessions.length)
     : 0;
+
+
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -212,6 +241,47 @@ export default function Dashboard() {
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Recommendations Section */}
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl shadow-sm p-6 border border-indigo-100">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            💡 Smart Insights
+          </h2>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700">
+              <strong>Cross-sell opportunity:</strong> Customers who browse{' '}
+              <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded font-medium">
+                {sectionData[0]?.name}
+              </span>{' '}
+              also visit:
+            </p>
+            {recommendations.map((rec, idx) => (
+              <div key={idx} className="flex items-center justify-between bg-white rounded-lg p-3">
+                <span className="font-medium capitalize">{rec.section}</span>
+                <span className="text-sm text-gray-600">{rec.percentage.toFixed(0)}% of customers</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Wins */}
+        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">⚡ Quick Wins</h2>
+          <div className="space-y-3">
+            {actionableInsights.map((insight, idx) => (
+              <div key={idx} className={`border-l-4 p-4 rounded ${insight.type === 'warning' ? 'border-yellow-500 bg-yellow-50' :
+                  insight.type === 'opportunity' ? 'border-blue-500 bg-blue-50' :
+                    'border-green-500 bg-green-50'
+                }`}>
+                <h3 className="font-semibold text-sm mb-1">{insight.title}</h3>
+                <p className="text-sm text-gray-700 mb-2">{insight.description}</p>
+                <p className="text-xs font-medium text-gray-600">
+                  💡 Action: {insight.action}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 
