@@ -1,1 +1,1 @@
-# ChanceuStore-techMVP
+# ChanceuxStore-techMVP
